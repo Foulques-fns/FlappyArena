@@ -3,7 +3,7 @@ import { drawBackground, drawCreature, roundRect } from "./render";
 import { sfx } from "./audio";
 import type { Settings } from "./store";
 
-export type Mode = "classic" | "level" | "duel" | "time" | "chaos";
+export type Mode = "classic" | "level" | "duel" | "time" | "chaos" | "online";
 export type Phase = "ready" | "countdown" | "running" | "over" | "paused";
 
 export const W = 480;
@@ -35,6 +35,7 @@ export interface EngineOpts {
   duration?: number;     // time attack seconds
   silent?: boolean;      // no sound (attract mode)
   auto?: boolean;        // start immediately (attract mode)
+  startScore?: number;   // score offset when joining mid-round (netplay)
   onTick: (s: Snapshot) => void;
   onEnd: (r: Result) => void;
 }
@@ -66,8 +67,9 @@ export interface Result {
 interface Particle {
   x: number; y: number; vx: number; vy: number;
   life: number; max: number; size: number; color: string;
-  kind: "dot" | "square" | "star" | "heart" | "ring";
+  kind: "dot" | "square" | "star" | "heart" | "ring" | "bolt" | "leaf" | "rune" | "line" | "linto" | "glowsq" | "glowdot" | "glyph";
   grav: number;
+  glyph?: string;
 }
 
 interface FloatText {
@@ -99,6 +101,7 @@ interface Pickup {
 interface Bird {
   cfg: PlayerCfg;
   skin: Skin;
+  ctrl?: { setTarget: (y: number) => void; flap: () => void };
   x: number; y: number; vy: number; rot: number;
   alive: boolean;
   dyingT: number;
@@ -117,6 +120,8 @@ interface Bird {
   powerUsed: number;
   dead0: number;
   y0: number;
+  index: number;
+  ctrlY: number;
 }
 
 const CHAOS_LIST = [
@@ -151,7 +156,8 @@ export class FlappyEngine {
   private weather: { x: number; y: number; v: number; s: number; a: number }[] = [];
   private birds: Bird[] = [];
   private nextId = 1;
-  private spawnX = 0;
+  /** world-relative offset of next spawned obstacle (used for netplay sync) */
+  spawnX = 0;
   phase: Phase = "ready";
   private countdown = 0;
   private timeLeft = 0;
@@ -169,6 +175,11 @@ export class FlappyEngine {
   private destroyed = false;
   private lightning = 0;
   private snd: typeof sfx;
+  private startScore = 0;
+  /** guest netcode: world is driven remotely */
+  netPuppet = false;
+  /** treat engine logic as "online" mode automatically */
+  isOnlineMode = false;
 
   constructor(canvas: HTMLCanvasElement, opts: EngineOpts) {
     this.canvas = canvas;
@@ -178,6 +189,7 @@ export class FlappyEngine {
       ? (new Proxy({}, { get: () => noop }) as unknown as typeof sfx)
       : sfx;
     this.map = MAPS.find((m) => m.id === opts.mapId) ?? MAPS[0];
+    this.isOnlineMode = opts.mode === "online";
     const c = canvas.getContext("2d", { alpha: false });
     if (!c) throw new Error("no 2d context");
     this.ctx = c;
@@ -210,6 +222,7 @@ export class FlappyEngine {
     this.time = 0;
     this.scroll = 0;
     this.spawnX = W + 120;
+    this.startScore = this.opts.startScore ?? 0;
     this.ended = false;
     this.chaos = [];
     this.chaosLabel = "";
@@ -241,13 +254,15 @@ export class FlappyEngine {
       powerUsed: 0,
       dead0: 0,
       y0: H / 2 - 40 + (this.opts.players.length > 1 ? (i === 0 ? -42 : 42) : 0),
+      index: i,
+      ctrlY: H / 2,
     }));
     this.weather = [];
     const wn = s.particles ? 60 : 0;
     for (let i = 0; i < wn; i++) {
       this.weather.push({ x: Math.random() * W, y: Math.random() * H, v: 40 + Math.random() * 120, s: 1 + Math.random() * 2.4, a: 0.2 + Math.random() * 0.6 });
     }
-    this.phase = this.opts.auto ? "running" : this.opts.mode === "duel" ? "countdown" : "ready";
+    this.phase = this.opts.auto ? "running" : this.opts.mode === "duel" || this.opts.mode === "online" ? "countdown" : "ready";
     this.countdown = 3.2;
     // pre-generate a couple of obstacles for the ready screen
     for (let i = 0; i < 3; i++) this.spawnObstacle();
@@ -255,6 +270,61 @@ export class FlappyEngine {
 
   restart() {
     this.reset();
+  }
+
+  /** Attach an external controller to a bird (netplay). */
+  setController(index: number, c: { setTarget: (y: number) => void; flap: () => void } | undefined) {
+    const b = this.birds[index];
+    if (b) b.ctrl = c;
+  }
+
+  /** Read a player state (netplay sync). */
+  getPlayerState(index: number) {
+    const b = this.birds[index];
+    if (!b) return null;
+    return { x: b.x, y: b.y, vy: b.vy, rot: b.rot, score: b.score, coins: b.coins, alive: b.alive, flapPhase: b.flapPhase };
+  }
+
+  /** Snapshot of world obstacles + pickups (host -> guest netcode). */
+  getNetWorld() {
+    return {
+      o: this.obstacles.map((o) => ({
+        i: o.id, x: Math.round(o.x), w: o.w, gY: Math.round(o.gapY), g: Math.round(o.gap),
+        k: o.kind, b: Math.round(o.baseY), a: Math.round(o.amp), ms: +o.mspeed.toFixed(2),
+        p: +o.phase.toFixed(2), s: o.saw, inv: o.invisible, lT: +o.laserT.toFixed(2),
+      })),
+      p: this.pickups.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y), k: p.kind, t: p.taken })),
+      s: Math.round(this.scroll),
+      n: this.spawnX,
+    };
+  }
+
+  /** Apply host world snapshot (guest netcode). */
+  applyNetWorld(w: ReturnType<FlappyEngine["getNetWorld"]>) {
+    this.obstacles = w.o.map((o) => ({
+      id: o.i, x: o.x, w: o.w, gapY: o.gY, gap: o.g, kind: o.k as Obstacle["kind"],
+      baseY: o.b, amp: o.a, mspeed: o.ms, phase: o.p, saw: o.s, sawAng: 0,
+      invisible: o.inv, laserT: o.lT,
+      scored: this.birds.map(() => false),
+    }));
+    const nextId = Math.max(0, ...w.o.map((o) => o.i)) + 1;
+    this.nextId = Math.max(this.nextId, nextId);
+    this.scroll = w.s;
+    this.spawnX = w.n;
+    const prevP = new Map<string, number>();
+    for (const p of this.pickups) prevP.set(`${Math.round(p.x / 8)}:${p.kind}`, p.t);
+    this.pickups = w.p.map((p) => ({
+      x: p.x, y: p.y, kind: p.k as Pickup["kind"], taken: p.t, t: prevP.get(`${Math.round(p.x / 8)}:${p.k}`) ?? 0, vy: 0,
+    }));
+  }
+
+  /** Force round end (disconnect handling). */
+  abortRound() {
+    this.birds.forEach((b) => {
+      b.alive = false;
+      b.dyingT = Math.max(b.dyingT, 1);
+    });
+    this.finish();
   }
 
   /** Live-update gameplay settings (used by the in-game quick options). */
@@ -267,7 +337,7 @@ export class FlappyEngine {
   }
 
   resume() {
-    if (this.phase === "paused") this.phase = this.opts.mode === "duel" ? "countdown" : "running";
+    if (this.phase === "paused") this.phase = this.opts.mode === "duel" || this.opts.mode === "online" ? "countdown" : "running";
     if (this.countdown <= 0) this.countdown = 2.2;
   }
 
@@ -413,7 +483,7 @@ export class FlappyEngine {
       if (this.countdown <= 0) this.phase = "running";
     }
 
-    const running = this.phase === "running";
+    const running = this.phase === "running" && !this.netPuppet;
     const anyAlive = this.birds.some((b) => b.alive);
 
     if (running) {
@@ -489,27 +559,37 @@ export class FlappyEngine {
       }
       if (!running) continue;
 
-      // AI
+      // AI / external controllers
       if (b.cfg.ai) this.aiThink(b, dt, speed);
-
-      const g = BASE_GRAV * this.gravMul * b.gdir;
-      b.vy += g * dt;
-      const maxFall = 780 * (this.chaos.includes("moon") ? 0.75 : 1);
-      b.vy = Math.max(-820, Math.min(maxFall, b.vy));
-      b.y += b.vy * dt;
-      b.flapPhase += dt * (10 + Math.abs(b.vy) * 0.008);
-
-      // wind drift
-      const wf = this.windForce;
-      if (wf) {
-        b.x += wf * dt * 0.55;
+      if (b.ctrl && this.phase === "running") {
+        b.y += (b.ctrlY - b.y) * Math.min(1, dt * 13);
+        b.x = W * 0.28 + (b.index === 0 ? 0 : 0);
+        b.flapPhase += dt * 8;
       }
-      const home = W * 0.28;
-      b.x += (home - b.x) * Math.min(1, dt * 1.1);
-      b.x = Math.max(W * 0.12, Math.min(W * 0.52, b.x));
 
-      const targetRot = Math.max(-0.6, Math.min(1.35, (b.vy / 620) * 1.25)) * b.gdir;
-      b.rot += (targetRot - b.rot) * Math.min(1, dt * 9);
+      const targetRot = b.ctrl ? Math.max(-0.6, Math.min(1.35, ((b.ctrlY - b.y) / 60) * 0.6)) : 0;
+      if (b.ctrl) {
+        b.rot += (targetRot - b.rot) * Math.min(1, dt * 9);
+      } else {
+        const g = BASE_GRAV * this.gravMul * b.gdir;
+        b.vy += g * dt;
+        const maxFall = 780 * (this.chaos.includes("moon") ? 0.75 : 1);
+        b.vy = Math.max(-820, Math.min(maxFall, b.vy));
+        b.y += b.vy * dt;
+        b.flapPhase += dt * (10 + Math.abs(b.vy) * 0.008);
+
+        // wind drift
+        const wf = this.windForce;
+        if (wf) {
+          b.x += wf * dt * 0.55;
+        }
+        const home = W * 0.28;
+        b.x += (home - b.x) * Math.min(1, dt * 1.1);
+        b.x = Math.max(W * 0.12, Math.min(W * 0.52, b.x));
+
+        const rt = Math.max(-0.6, Math.min(1.35, (b.vy / 620) * 1.25)) * b.gdir;
+        b.rot += (rt - b.rot) * Math.min(1, dt * 9);
+      }
 
       // ceiling / floor
       if (b.y < b.r + 2) {
@@ -525,16 +605,58 @@ export class FlappyEngine {
 
       // trail particles
       b.trailT -= dt;
-      if (s.particles && b.cfg.trailId !== "none" && b.trailT <= 0) {
-        b.trailT = 0.03;
-        const tr = TRAILS.find((t) => t.id === b.cfg.trailId)!;
+      const tid: TrailKind = b.cfg.trailId;
+      if (s.particles && tid !== "none" && b.trailT <= 0) {
+        b.trailT = tid === "lightning" ? 0.025 : 0.03;
+        const tr = TRAILS.find((t) => t.id === tid)!;
         const col = tr.colors[Math.floor(Math.random() * tr.colors.length)];
-        const kind = b.cfg.trailId === "stars" ? "star" : b.cfg.trailId === "hearts" ? "heart" : b.cfg.trailId === "bubbles" || b.cfg.trailId === "ice" ? "ring" : "dot";
-        this.parts.push({
-          x: b.x - b.r * 0.9, y: b.y + (Math.random() - 0.5) * b.r,
-          vx: -speed * 0.35 - Math.random() * 40, vy: (Math.random() - 0.5) * 50 - (b.cfg.trailId === "fire" ? 40 : 0),
-          life: 0.55, max: 0.55, size: 3 + Math.random() * 4, color: col, kind: kind as Particle["kind"], grav: b.cfg.trailId === "bubbles" ? -60 : 0,
-        });
+        const kind: Particle["kind"] =
+          tid === "stars" || tid === "galaxy" ? "star"
+          : tid === "hearts" ? "heart"
+          : tid === "bubbles" || tid === "ice" ? "ring"
+          : tid === "lightning" ? "bolt"
+          : tid === "leaves" ? "leaf"
+          : tid === "runes" ? "rune"
+          : tid === "data" || tid === "neon" || tid === "plasma" ? "square"
+          : "dot";
+        const px = b.x - b.r * 0.95;
+        const py = b.y + (Math.random() - 0.5) * b.r * 0.9;
+        if (tid === "plasma") {
+          this.parts.push({ x: px, y: b.y, vx: -speed * 0.55, vy: Math.sin(this.time * 30 + b.index) * 60, life: 0.42, max: 0.42, size: 4.5 + Math.random() * 3, color: col, kind: "line", grav: 0 });
+        } else if (tid === "lightning") {
+          let bx = px, by = py;
+          for (let i = 0; i < 4; i++) {
+            const nx2 = bx - 9 - Math.random() * 8;
+            const ny2 = by + (Math.random() - 0.5) * 22;
+            this.parts.push({ x: bx, y: by, vx: nx2 - bx, vy: ny2 - by, life: 0.16, max: 0.16, size: 1.8, color: i === 0 ? "#ffffff" : col, kind: "linto", grav: 0 });
+            bx = nx2; by = ny2;
+          }
+        } else if (tid === "neon") {
+          this.parts.push({ x: px, y: py, vx: -speed * 0.62, vy: 0, life: 0.7, max: 0.7, size: 3.2 + Math.random() * 2.6, color: col, kind: "glowsq", grav: 0 });
+        } else if (tid === "galaxy") {
+          this.parts.push({ x: px, y: py, vx: -speed * 0.3 - Math.random() * 30, vy: (Math.random() - 0.5) * 36, life: 0.8, max: 0.8, size: 1.5 + Math.random() * 3.5, color: col, kind: "glowdot", grav: 0 });
+        } else if (tid === "runes") {
+          const glyphs = ["ᚠ", "ᚢ", "ᚦ", "ᚨ", "ᚱ", "ᛟ", "✧", "◆", "☽", "◬", "Ω", "∆"];
+          this.parts.push({ x: px, y: py, vx: -speed * 0.28 - Math.random() * 24, vy: -30 - Math.random() * 40, life: 0.95, max: 0.95, size: 9 + Math.random() * 5, color: col, kind: "rune", grav: 0, glyph: glyphs[Math.floor(Math.random() * glyphs.length)] });
+        } else if (tid === "data") {
+          this.parts.push({ x: px, y: py, vx: -speed * 0.5, vy: (Math.random() - 0.5) * 30, life: 0.7, max: 0.7, size: 3 + Math.random() * 3, color: col, kind: "glowsq", grav: 0 });
+          if (Math.random() < 0.3) this.parts.push({ x: px, y: py + 8, vx: -speed * 0.45, vy: 0, life: 0.5, max: 0.5, size: 8, color: col, kind: "glyph", grav: 0, glyph: Math.random() < 0.5 ? "0" : "1" });
+        } else if (tid === "leaves") {
+          this.parts.push({ x: px, y: py, vx: -speed * 0.3 - Math.random() * 40, vy: 20 + Math.random() * 40, life: 0.9, max: 0.9, size: 3.5 + Math.random() * 3, color: col, kind: "leaf", grav: 60 });
+        } else if (tid === "fire") {
+          this.parts.push({ x: px, y: py - 2, vx: -speed * 0.35 - Math.random() * 40, vy: -70 - Math.random() * 60, life: 0.5, max: 0.5, size: 3 + Math.random() * 5, color: col, kind: "glowdot", grav: -160 });
+        } else {
+          const legacy: Particle["kind"] = kind === "star" || kind === "heart" ? kind : kind === "ring" ? "ring" : "dot";
+          this.parts.push({
+            x: px, y: py,
+            vx: -speed * 0.35 - Math.random() * 40, vy: (Math.random() - 0.5) * 50 - (tid === "bubbles" ? 20 : 0),
+            life: 0.55, max: 0.55, size: 3 + Math.random() * 4, color: col, kind: legacy, grav: tid === "bubbles" ? -60 : 0,
+          });
+        }
+      }
+      if (s.particles && tid === "neon" && Math.random() < 0.15) {
+        const tr = TRAILS.find((t) => t.id === "neon")!;
+        this.parts.push({ x: b.x - b.r, y: b.y + (Math.random() - 0.5) * b.r * 2, vx: -speed * 0.6, vy: 0, life: 0.9, max: 0.9, size: 1.6, color: tr.colors[Math.floor(Math.random() * 3)], kind: "glowdot", grav: 0 });
       }
 
       // collisions & scoring
@@ -567,6 +689,15 @@ export class FlappyEngine {
       } else if (wdir === "stars") {
         w.x -= w.v * dt * 0.12;
         if (w.x < -6) { w.x = W + 6; w.y = Math.random() * H; }
+      } else if (wdir === "meteors") {
+        w.x -= w.v * dt * 2.2;
+        w.y += w.v * dt * 1.1;
+        if (w.x < -30 || w.y > H + 30) { w.x = W + Math.random() * 200; w.y = -20 - Math.random() * 100; w.s = 1 + Math.random() * 2.6; }
+      } else if (wdir === "cherry") {
+        w.x += Math.sin(this.time * 1.4 + w.y * 0.03) * 34 * dt - w.v * dt * 0.25;
+        w.y += w.v * dt * 0.55;
+        w.a += dt * 3;
+        if (w.y > H + 10 || w.x < -14) { w.y = -10 - Math.random() * 60; w.x = Math.random() * (W + 40); }
       } else {
         const vx = wdir === "snow" ? Math.sin(this.time + w.y * 0.02) * 26 : wdir === "sand" ? -190 : wdir === "rain" ? -70 : -26;
         w.x += vx * dt;
@@ -632,10 +763,18 @@ export class FlappyEngine {
   private collide(b: Bird) {
     const idx = this.birds.indexOf(b);
     const hitR = b.r * 0.86;
+    if (b.ctrl) {
+      // network-controlled bird: score-only logic is skipped; nothing to do
+      return;
+    }
     for (const o of this.obstacles) {
       // scoring
       if (!o.scored[idx] && o.x + o.w < b.x - b.r * 0.4) {
         o.scored[idx] = true;
+        if (this.startScore > 0) {
+          b.score += this.startScore;
+          this.startScore = 0;
+        }
         const dbl = b.powers.has("double") ? 2 : 1;
         b.score += dbl;
         const off = Math.abs(b.y - o.gapY);
@@ -764,6 +903,16 @@ export class FlappyEngine {
     this.flash = amt;
   }
 
+  /** Set countdown directly (netcode onboarding). */
+  setCountdown(v: number) {
+    this.phase = "countdown";
+    this.countdown = v;
+  }
+
+  get playerCount() {
+    return this.birds.length;
+  }
+
   private finish() {
     if (this.ended) return;
     this.ended = true;
@@ -838,6 +987,39 @@ export class FlappyEngine {
         } else if (wk === "sand") {
           ctx.fillStyle = "#fde68a";
           ctx.fillRect(w.x, w.y, w.s * 3, 1.4);
+        } else if (wk === "meteors") {
+          // head glow + tail
+          const mvx = -w.v * 2.2 * 0.016, mvy = w.v * 1.1 * 0.016;
+          const ln = Math.hypot(mvx, mvy) || 1;
+          const ux = mvx / ln, uy = mvy / ln;
+          const tail = 26 + w.s * 10;
+          const tg = ctx.createLinearGradient(w.x, w.y, w.x - ux * tail, w.y - uy * tail);
+          tg.addColorStop(0, "rgba(255,255,255,.9)");
+          tg.addColorStop(0.3, "rgba(167,139,250,.6)");
+          tg.addColorStop(1, "rgba(167,139,250,0)");
+          ctx.strokeStyle = tg;
+          ctx.lineWidth = w.s;
+          ctx.beginPath();
+          ctx.moveTo(w.x, w.y);
+          ctx.lineTo(w.x - ux * tail, w.y - uy * tail);
+          ctx.stroke();
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.arc(w.x, w.y, w.s, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (wk === "cherry") {
+          ctx.fillStyle = "#fecdd3";
+          ctx.save();
+          ctx.translate(w.x, w.y);
+          ctx.rotate(w.a);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, w.s * 1.5, w.s * 0.7, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(251,113,133,.65)";
+          ctx.beginPath();
+          ctx.ellipse(w.s * 0.4, 0, w.s * 0.32, w.s * 0.22, 0.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         } else {
           ctx.fillStyle = "#fff";
           ctx.beginPath();
@@ -859,40 +1041,156 @@ export class FlappyEngine {
       const a = Math.max(0, p.life / p.max);
       ctx.globalAlpha = a;
       ctx.fillStyle = p.color;
-      if (p.kind === "ring") {
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.stroke();
-      } else if (p.kind === "star") {
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.life * 6);
-        ctx.beginPath();
-        for (let i = 0; i < 10; i++) {
-          const ang = (Math.PI / 5) * i - Math.PI / 2;
-          const rad = i % 2 === 0 ? p.size : p.size * 0.45;
-          ctx[i === 0 ? "moveTo" : "lineTo"](Math.cos(ang) * rad, Math.sin(ang) * rad);
+      switch (p.kind) {
+        case "ring": {
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
         }
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      } else if (p.kind === "heart") {
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        const hs = p.size;
-        ctx.beginPath();
-        ctx.moveTo(0, hs * 0.6);
-        ctx.bezierCurveTo(-hs * 1.2, -hs * 0.2, -hs * 0.5, -hs, 0, -hs * 0.35);
-        ctx.bezierCurveTo(hs * 0.5, -hs, hs * 1.2, -hs * 0.2, 0, hs * 0.6);
-        ctx.fill();
-        ctx.restore();
-      } else {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
+        case "star": {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.life * 6);
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          for (let i = 0; i < 10; i++) {
+            const ang = (Math.PI / 5) * i - Math.PI / 2;
+            const rad = i % 2 === 0 ? p.size : p.size * 0.45;
+            ctx[i === 0 ? "moveTo" : "lineTo"](Math.cos(ang) * rad, Math.sin(ang) * rad);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+          break;
+        }
+        case "heart": {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          const hs = p.size;
+          ctx.beginPath();
+          ctx.moveTo(0, hs * 0.6);
+          ctx.bezierCurveTo(-hs * 1.2, -hs * 0.2, -hs * 0.5, -hs, 0, -hs * 0.35);
+          ctx.bezierCurveTo(hs * 0.5, -hs, hs * 1.2, -hs * 0.2, 0, hs * 0.6);
+          ctx.fill();
+          ctx.restore();
+          break;
+        }
+        case "glowdot": {
+          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2.4);
+          g.addColorStop(0, p.color);
+          g.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = g;
+          ctx.globalAlpha = a * 0.9;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * 2.4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.globalAlpha = a * 0.8;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, Math.max(0.8, p.size * 0.42), 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+        case "glowsq": {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.life * 5);
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 10;
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+          ctx.restore();
+          break;
+        }
+        case "line": {
+          // plasma: trailing sine segment looking backward
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          for (let k = 1; k <= 4; k++) {
+            ctx.lineTo(p.x - k * 7, p.y + Math.sin(this.time * 26 - k * 1.5) * (3 + k * 1.8));
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          break;
+        }
+        case "linto": {
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = p.size;
+          ctx.shadowColor = "#fef08a";
+          ctx.shadowBlur = 9;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x + p.vx, p.y + p.vy);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          break;
+        }
+        case "bolt":
+          break;
+        case "leaf": {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(this.time * 4 + p.x * 0.05);
+          ctx.globalAlpha = a * 0.95;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size * 1.5, p.size * 0.62, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = a * 0.6;
+          ctx.strokeStyle = "rgba(0,0,0,.3)";
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.moveTo(-p.size, 0);
+          ctx.lineTo(p.size, 0);
+          ctx.stroke();
+          ctx.restore();
+          break;
+        }
+        case "rune": {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(Math.sin(this.time * 3 + p.x) * 0.5);
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 8;
+          ctx.font = `bold ${p.size}px serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(p.glyph ?? "✧", 0, 0);
+          ctx.restore();
+          ctx.textBaseline = "alphabetic";
+          break;
+        }
+        case "glyph": {
+          ctx.save();
+          ctx.font = `bold ${p.size}px monospace`;
+          ctx.textAlign = "center";
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 6;
+          ctx.fillText(p.glyph ?? "1", p.x, p.y);
+          ctx.restore();
+          break;
+        }
+        case "square": {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.life * 4);
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+          ctx.restore();
+          break;
+        }
+        default: {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
+      ctx.shadowBlur = 0;
     }
     ctx.globalAlpha = 1;
 
@@ -914,7 +1212,7 @@ export class FlappyEngine {
         ctx.scale(1, -1);
         ctx.translate(-b.x, -b.y);
       }
-      drawCreature(ctx, b.skin, b.x, b.y, b.r, b.rot, b.flapPhase, !b.alive);
+      drawCreature(ctx, b.skin, b.x, b.y, b.r, b.rot, b.flapPhase, !b.alive, this.time);
       ctx.restore();
       if (b.shield) {
         ctx.strokeStyle = `rgba(56,189,248,${0.6 + 0.3 * Math.sin(this.time * 8)})`;

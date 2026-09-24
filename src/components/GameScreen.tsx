@@ -23,6 +23,7 @@ const MODE_LABEL: Record<Mode, string> = {
   duel: "Duel",
   time: "Contre-la-montre",
   chaos: "Chaos",
+  online: "Duel en ligne",
 };
 
 export default function GameScreen({ mode, mapId, settings, players, level, duelRounds = 3, onExit, onLevel }: Props) {

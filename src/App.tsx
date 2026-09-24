@@ -6,12 +6,14 @@ import SettingsScreen from "./components/SettingsScreen";
 import LevelsScreen from "./components/LevelsScreen";
 import DuelSetup, { type DuelConfig } from "./components/DuelSetup";
 import StatsScreen from "./components/StatsScreen";
+import OnlineGameScreen from "./components/OnlineGameScreen";
+import type { OnlineMatch } from "./components/OnlineDuel";
 import { useProfile } from "./game/store";
 import { setVolumes, unlockAudio } from "./game/audio";
 import type { Mode, PlayerCfg } from "./game/engine";
 import type { Level } from "./game/data";
 
-type Screen = "menu" | "game" | "shop" | "settings" | "levels" | "duel" | "stats";
+type Screen = "menu" | "game" | "shop" | "settings" | "levels" | "duel" | "stats" | "online";
 
 export default function App() {
   const [p] = useProfile();
@@ -19,6 +21,7 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("classic");
   const [level, setLevel] = useState<Level | undefined>();
   const [duel, setDuel] = useState<DuelConfig | null>(null);
+  const [onlineMatch, setOnlineMatch] = useState<OnlineMatch | null>(null);
 
   useEffect(() => {
     setVolumes(p.settings.sfx, p.settings.music);
@@ -55,6 +58,11 @@ export default function App() {
     setScreen("game");
   };
 
+  const startOnline = (m: OnlineMatch) => {
+    setOnlineMatch(m);
+    setScreen("online");
+  };
+
   const solo: PlayerCfg[] = [{ skinId: p.skin, trailId: p.trail, name: "Toi", color: "#38bdf8" }];
   const duelPlayers: PlayerCfg[] = duel
     ? [
@@ -79,7 +87,18 @@ export default function App() {
       {screen === "settings" && <SettingsScreen onBack={() => setScreen("menu")} />}
       {screen === "stats" && <StatsScreen onBack={() => setScreen("menu")} />}
       {screen === "levels" && <LevelsScreen onBack={() => setScreen("menu")} onPlay={startLevel} />}
-      {screen === "duel" && <DuelSetup onBack={() => setScreen("menu")} onStart={startDuel} />}
+      {screen === "duel" && <DuelSetup onBack={() => setScreen("menu")} onStart={startDuel} onOnline={startOnline} />}
+      {screen === "online" && onlineMatch && (
+        <OnlineGameScreen
+          match={onlineMatch}
+          onExit={() => {
+            onlineMatch.session.send({ t: "leave" });
+            onlineMatch.session.destroy();
+            setOnlineMatch(null);
+            setScreen("duel");
+          }}
+        />
+      )}
       {screen === "game" && (
         <GameScreen
           key={`${mode}-${level?.id ?? "x"}-${duel ? duel.mapId + duel.skin2 : ""}`}

@@ -98,25 +98,28 @@ export default function ShopScreen({ onBack }: { onBack: () => void }) {
       )}
 
       {tab === "trails" && (
-        <div className="grid grid-cols-2 gap-3 pb-6 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 pb-6 sm:grid-cols-3 lg:grid-cols-4">
           {TRAILS.map((t) => {
             const owned = p.ownedTrails.includes(t.id);
             const equipped = p.trail === t.id;
             return (
               <Panel key={t.id} className={cn("flex flex-col gap-2 !p-3", equipped && "ring-2 ring-sky-400")}>
-                <div className="flex h-10 items-center gap-1 overflow-hidden rounded-xl bg-slate-950/60 px-2">
-                  {Array.from({ length: 12 }).map((_, i) => (
+                <div className="relative flex h-10 items-center gap-1 overflow-hidden rounded-xl bg-slate-950/70 px-2"
+                  style={t.glow ? { boxShadow: `inset 0 -14px 24px -14px ${t.colors[0]}55` } : undefined}>
+                  {Array.from({ length: 14 }).map((_, i) => (
                     <span
                       key={i}
-                      className="rounded-full"
+                      className={cn(t.id === "data" || t.id === "neon" ? "rounded-[2px]" : "rounded-full")}
                       style={{
-                        width: 4 + i * 1.2,
-                        height: 4 + i * 1.2,
+                        width: t.id === "runes" ? 3 : 3 + i * 1.05,
+                        height: t.id === "data" ? 4 + i : 3 + i * 1.05,
                         background: t.colors[i % t.colors.length],
-                        opacity: 0.25 + (i / 12) * 0.75,
+                        opacity: 0.15 + (i / 14) * 0.85,
+                        boxShadow: t.glow ? `0 0 6px ${t.colors[i % t.colors.length]}` : undefined,
                       }}
                     />
                   ))}
+                  {t.glow && <span className="absolute right-1.5 top-1 text-[8px] font-black uppercase tracking-widest text-white/60">glow</span>}
                 </div>
                 <p className="text-sm font-black text-white">{t.name}</p>
                 <p className="text-[10px] text-slate-400">{t.desc}</p>

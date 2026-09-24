@@ -92,7 +92,7 @@ export default function MenuScreen({ onPlay, onShop, onSettings, onStats, onLeve
           </h1>
           <h2 className="-mt-2 text-3xl font-black tracking-[0.35em] text-sky-300 sm:text-4xl">ARENA</h2>
           <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">
-            {SKINS.length} skins · {MAPS.length} maps · {LEVELS.length} niveaux · 5 modes
+            {SKINS.length} skins · {TRAILS.length} traînées · {MAPS.length} maps · {LEVELS.length} niveaux
           </p>
         </div>
 
@@ -119,6 +119,15 @@ export default function MenuScreen({ onPlay, onShop, onSettings, onStats, onLeve
             </button>
           ))}
         </div>
+
+        <button
+          onClick={onDuel}
+          className="group relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-500 via-teal-500 to-sky-500 p-4 text-left ring-1 ring-white/20 transition hover:scale-[1.01]"
+        >
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-5xl transition-transform group-hover:scale-125">🌐</div>
+          <p className="text-lg font-black text-white drop-shadow">DUEL EN LIGNE</p>
+          <p className="text-xs font-bold text-white/85">Affronte un ami en direct avec un code — même monde, un seul survivant. ⚡ WebRTC P2P</p>
+        </button>
 
         <Panel className="flex items-center gap-3">
           <div className="rounded-2xl bg-slate-950/60 p-1 ring-1 ring-white/10">

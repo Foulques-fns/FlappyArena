@@ -3,6 +3,7 @@ import { MAPS, SKINS } from "../game/data";
 import { useProfile } from "../game/store";
 import { Btn, MapPreview, Panel, SkinPreview, Slider } from "./UI";
 import { cn } from "../utils/cn";
+import OnlineDuel, { type OnlineMatch } from "./OnlineDuel";
 
 export interface DuelConfig {
   p2Ai: boolean;
@@ -15,8 +16,15 @@ export interface DuelConfig {
   name2: string;
 }
 
-export default function DuelSetup({ onBack, onStart }: { onBack: () => void; onStart: (c: DuelConfig) => void }) {
+export default function DuelSetup({
+  onBack, onStart, onOnline,
+}: {
+  onBack: () => void;
+  onStart: (c: DuelConfig) => void;
+  onOnline: (m: OnlineMatch) => void;
+}) {
   const [p, update] = useProfile();
+  const [online, setOnline] = useState(false);
   const [cfg, setCfg] = useState<DuelConfig>({
     p2Ai: true,
     aiLevel: p.settings.aiLevel,
@@ -32,6 +40,8 @@ export default function DuelSetup({ onBack, onStart }: { onBack: () => void; onS
   const ownedMaps = MAPS.filter((m) => p.ownedMaps.includes(m.id));
   const set = (patch: Partial<DuelConfig>) => setCfg((c) => ({ ...c, ...patch }));
 
+  if (online) return <OnlineDuel onBack={() => setOnline(false)} onStart={(m) => onOnline(m)} />;
+
   const start = () => {
     update((pr) => ({ ...pr, skinP2: cfg.skin2, settings: { ...pr.settings, aiLevel: cfg.aiLevel, duelRounds: cfg.rounds } }));
     onStart({ ...cfg, name2: cfg.p2Ai ? ["Bot Débutant", "Bot Normal", "Bot Expert", "BOT ULTRA"][cfg.aiLevel] : cfg.name2 });
@@ -46,14 +56,14 @@ export default function DuelSetup({ onBack, onStart }: { onBack: () => void; onS
       </header>
 
       <Panel>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => set({ p2Ai: false })}
             className={cn("rounded-2xl p-3 text-center ring-1 transition", !cfg.p2Ai ? "bg-sky-500/20 ring-sky-400" : "bg-white/5 ring-white/10 hover:bg-white/10")}
           >
             <div className="text-2xl">👥</div>
             <div className="text-sm font-black text-white">2 Joueurs</div>
-            <div className="text-[10px] text-slate-400">Même écran, même clavier</div>
+            <div className="text-[10px] text-slate-400">Même écran</div>
           </button>
           <button
             onClick={() => set({ p2Ai: true })}
@@ -61,7 +71,15 @@ export default function DuelSetup({ onBack, onStart }: { onBack: () => void; onS
           >
             <div className="text-2xl">🤖</div>
             <div className="text-sm font-black text-white">Contre l'IA</div>
-            <div className="text-[10px] text-slate-400">Un bot impitoyable</div>
+            <div className="text-[10px] text-slate-400">Bot impitoyable</div>
+          </button>
+          <button
+            onClick={() => setOnline(true)}
+            className="rounded-2xl bg-gradient-to-br from-emerald-500/25 to-emerald-600/25 p-3 text-center ring-1 ring-emerald-400/50 transition hover:from-emerald-500/40 hover:to-emerald-600/40"
+          >
+            <div className="text-2xl">🌐</div>
+            <div className="text-sm font-black text-emerald-200">En ligne</div>
+            <div className="text-[10px] text-emerald-300/70">Avec un code</div>
           </button>
         </div>
       </Panel>

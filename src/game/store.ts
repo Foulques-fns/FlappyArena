@@ -183,6 +183,7 @@ export function checkUnlocks(): { newAch: string[]; newSkins: string[] } {
     coins1000: p.totalCoins >= 1000,
     duel1: p.duelWins >= 1,
     duel10: p.duelWins >= 10,
+    online1: p.scores.some((s) => s.mode === "online duel"),
     lvl5: levelsDone >= 5,
     lvl15: levelsDone >= 15,
     lvl30: levelsDone >= LEVELS.length,

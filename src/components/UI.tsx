@@ -135,7 +135,7 @@ export function SkinPreview({ skin, size = 64, spin = false }: { skin: Skin; siz
     const draw = () => {
       t += 0.05;
       ctx.clearRect(0, 0, size, size);
-      drawCreature(ctx, skin, size / 2, size / 2 + Math.sin(t) * size * 0.05, size * 0.26, spin ? Math.sin(t * 0.7) * 0.3 : Math.sin(t) * 0.16, t * 2.2);
+      drawCreature(ctx, skin, size / 2, size / 2 + Math.sin(t) * size * 0.05, size * 0.26, spin ? Math.sin(t * 0.7) * 0.3 : Math.sin(t) * 0.16, t * 2.2, false, t / 0.05);
       raf = requestAnimationFrame(draw);
     };
     draw();

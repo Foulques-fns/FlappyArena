@@ -72,31 +72,42 @@ export const SKINS: Skin[] = [
 ];
 
 // --------------------------- TRAILS ---------------------------------------
-export type TrailKind = "none" | "sparkle" | "fire" | "bubbles" | "rainbow" | "stars" | "smoke" | "hearts" | "ice";
+export type TrailKind =
+  | "none" | "sparkle" | "fire" | "bubbles" | "rainbow" | "stars" | "smoke"
+  | "hearts" | "ice" | "plasma" | "neon" | "lightning" | "galaxy" | "leaves"
+  | "runes" | "data";
 
 export interface Trail {
   id: TrailKind;
   name: string;
   price: number;
   colors: string[];
+  glow?: boolean;
   desc: string;
 }
 
 export const TRAILS: Trail[] = [
   { id: "none", name: "Aucune", price: 0, colors: ["#94a3b8"], desc: "Discrétion totale." },
   { id: "sparkle", name: "Étincelles", price: 80, colors: ["#fef08a", "#fde047", "#ffffff"], desc: "Un peu de magie." },
-  { id: "fire", name: "Flammes", price: 150, colors: ["#fbbf24", "#f97316", "#dc2626"], desc: "Ça chauffe !" },
-  { id: "bubbles", name: "Bulles", price: 120, colors: ["#67e8f9", "#a5f3fc", "#ffffff"], desc: "Glou glou." },
-  { id: "rainbow", name: "Arc-en-ciel", price: 300, colors: ["#f43f5e", "#f97316", "#facc15", "#4ade80", "#38bdf8", "#a78bfa"], desc: "Toutes les couleurs." },
-  { id: "stars", name: "Étoiles", price: 220, colors: ["#fde047", "#f0abfc", "#93c5fd"], desc: "Poussière d'étoiles." },
   { id: "smoke", name: "Fumée", price: 100, colors: ["#94a3b8", "#cbd5e1", "#e2e8f0"], desc: "Sortie dramatique." },
+  { id: "bubbles", name: "Bulles", price: 120, colors: ["#67e8f9", "#a5f3fc", "#ffffff"], desc: "Glou glou." },
+  { id: "fire", name: "Flammes", price: 150, colors: ["#fbbf24", "#f97316", "#dc2626"], glow: true, desc: "Ça chauffe !" },
+  { id: "leaves", name: "Feuilles", price: 160, colors: ["#4ade80", "#a3e635", "#fbbf24"], desc: "Tourbillon d'automne." },
   { id: "hearts", name: "Cœurs", price: 180, colors: ["#fb7185", "#f472b6", "#fecdd3"], desc: "Amour en vol." },
   { id: "ice", name: "Givre", price: 200, colors: ["#bae6fd", "#7dd3fc", "#ffffff"], desc: "Froid glacial." },
+  { id: "stars", name: "Étoiles", price: 220, colors: ["#fde047", "#f0abfc", "#93c5fd"], glow: true, desc: "Poussière d'étoiles." },
+  { id: "plasma", name: "Plasma", price: 260, colors: ["#22d3ee", "#a78bfa", "#f0abfc"], glow: true, desc: "Énergie instable." },
+  { id: "rainbow", name: "Arc-en-ciel", price: 300, colors: ["#f43f5e", "#f97316", "#facc15", "#4ade80", "#38bdf8", "#a78bfa"], desc: "Toutes les couleurs." },
+  { id: "neon", name: "Néon", price: 320, colors: ["#39ff14", "#00fff2", "#ff00ea"], glow: true, desc: "Lumière synthétique pure." },
+  { id: "lightning", name: "Foudre", price: 380, colors: ["#fef08a", "#ffffff", "#93c5fd"], glow: true, desc: "Laisse un éclair derrière toi." },
+  { id: "data", name: "Données", price: 420, colors: ["#22d3ee", "#4ade80", "#0ea5e9"], glow: true, desc: "Fragments binaires." },
+  { id: "galaxy", name: "Galaxie", price: 520, colors: ["#818cf8", "#e879f9", "#fbbf24", "#ffffff"], glow: true, desc: "Une nébuleuse en miniature." },
+  { id: "runes", name: "Runes", price: 700, colors: ["#c084fc", "#f0abfc", "#e9d5ff"], glow: true, desc: "Des glyphes anciens flottent." },
 ];
 
 // --------------------------- MAPS -----------------------------------------
-export type WeatherKind = "none" | "rain" | "snow" | "stars" | "bubbles" | "embers" | "leaves" | "sand" | "matrix";
-export type BackKind = "hills" | "city" | "mountains" | "space" | "reef" | "volcano" | "cyber" | "candy" | "clouds" | "ruins";
+export type WeatherKind = "none" | "rain" | "snow" | "stars" | "bubbles" | "embers" | "leaves" | "sand" | "matrix" | "meteors" | "cherry";
+export type BackKind = "hills" | "city" | "mountains" | "space" | "reef" | "volcano" | "cyber" | "candy" | "clouds" | "ruins" | "aurora" | "japan" | "storm";
 
 export interface GameMap {
   id: string;
@@ -127,9 +138,12 @@ export const MAPS: GameMap[] = [
   { id: "volcano", name: "Volcan", price: 400, sky: ["#450a0a", "#7f1d1d", "#b91c1c"], ground: "#450a0a", groundDark: "#1c0606", pipeA: "#f97316", pipeB: "#9a3412", pipeEdge: "#7c2d12", accent: "#fde047", weather: "embers", back: "volcano", dark: true, desc: "Courants ascendants brûlants.", speedMul: 1.12 },
   { id: "arctic", name: "Banquise", price: 320, sky: ["#e0f2fe", "#bae6fd", "#7dd3fc"], ground: "#e2e8f0", groundDark: "#94a3b8", pipeA: "#7dd3fc", pipeB: "#0284c7", pipeEdge: "#0369a1", accent: "#f0f9ff", weather: "snow", back: "mountains", dark: false, desc: "Glissant et venteux.", wind: 14 },
   { id: "cyber", name: "Cyber Grid", price: 500, sky: ["#0b0016", "#2e1065", "#701a75"], ground: "#1a032e", groundDark: "#0b0016", pipeA: "#f0abfc", pipeB: "#a21caf", pipeEdge: "#f472b6", accent: "#22d3ee", weather: "matrix", back: "cyber", dark: true, desc: "Synthwave et vitesse pure.", speedMul: 1.18 },
-  { id: "candy", name: "Bonbonland", price: 380, sky: ["#fbcfe8", "#f5d0fe", "#e9d5ff"], ground: "#f9a8d4", groundDark: "#db2777", pipeA: "#f472b6", pipeB: "#be185d", pipeEdge: "#9d174d", accent: "#fef08a", weather: "none", back: "candy", dark: false, desc: "Sucré mais impitoyable." },
+  { id: "candy", name: "Bonbonland", price: 380, sky: ["#fbcfe8", "#f5d0fe", "#e9d5ff"], ground: "#f9a8d4", groundDark: "#be185d", pipeA: "#f472b6", pipeB: "#be185d", pipeEdge: "#9d174d", accent: "#fef08a", weather: "none", back: "candy", dark: false, desc: "Sucré mais impitoyable." },
   { id: "desert", name: "Désert", price: 260, sky: ["#fcd34d", "#fdba74", "#fb923c"], ground: "#d97706", groundDark: "#92400e", pipeA: "#a16207", pipeB: "#713f12", pipeEdge: "#422006", accent: "#fef3c7", weather: "sand", back: "ruins", dark: false, desc: "Tempêtes de sable imprévisibles.", wind: -10 },
-  { id: "storm", name: "Orage", price: 450, sky: ["#1e293b", "#334155", "#475569"], ground: "#334155", groundDark: "#0f172a", pipeA: "#64748b", pipeB: "#334155", pipeEdge: "#1e293b", accent: "#fde047", weather: "rain", back: "clouds", dark: true, desc: "Éclairs, pluie et rafales.", wind: 18, speedMul: 1.08 },
+  { id: "sakura", name: "Cerisiers", price: 420, sky: ["#fecdd3", "#fda4af", "#fb7185"], ground: "#9f1239", groundDark: "#4c0519", pipeA: "#34d399", pipeB: "#065f46", pipeEdge: "#064e3b", accent: "#fff1f2", weather: "cherry", back: "japan", dark: false, desc: "Pétales et temple lointain." },
+  { id: "aurora", name: "Aurores", price: 460, sky: ["#020617", "#0b1b2a", "#14532d"], ground: "#0b1b2a", groundDark: "#020617", pipeA: "#34d399", pipeB: "#0e7490", pipeEdge: "#134e4a", accent: "#a3e635", weather: "snow", back: "aurora", dark: true, desc: "Danse boréale au-dessus des cimes." },
+  { id: "storm", name: "Orage", price: 450, sky: ["#1e293b", "#334155", "#475569"], ground: "#334155", groundDark: "#0f172a", pipeA: "#64748b", pipeB: "#334155", pipeEdge: "#1e293b", accent: "#fde047", weather: "rain", back: "storm", dark: true, desc: "Éclairs, pluie et rafales.", wind: 18, speedMul: 1.08 },
+  { id: "comet", name: "Nuée de Comètes", price: 620, sky: ["#050518", "#1a1040", "#3b0764"], ground: "#160b33", groundDark: "#0a0518", pipeA: "#c084fc", pipeB: "#86198f", pipeEdge: "#701a75", accent: "#67e8f9", weather: "meteors", back: "space", dark: true, desc: "Traverse une pluie de météores.", gravityMul: 0.8, wind: -8 },
   { id: "void", name: "Le Néant", price: 800, sky: ["#000000", "#0a0a0a", "#171717"], ground: "#0a0a0a", groundDark: "#000000", pipeA: "#404040", pipeB: "#171717", pipeEdge: "#525252", accent: "#ef4444", weather: "none", back: "space", dark: true, desc: "Rien. Juste toi et le vide.", speedMul: 1.25, gravityMul: 1.1 },
 ];
 
@@ -234,6 +248,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "coins1000", name: "Riche", desc: "Ramasser 1000 pièces", icon: "💰", reward: 250 },
   { id: "duel1", name: "Duelliste", desc: "Gagner un duel", icon: "⚔️", reward: 50 },
   { id: "duel10", name: "Gladiateur", desc: "Gagner 10 duels", icon: "🏆", reward: 300 },
+  { id: "online1", name: "Voyageur du Web", desc: "Jouer un duel en ligne", icon: "🌐", reward: 100 },
   { id: "lvl5", name: "Explorateur", desc: "Finir 5 niveaux", icon: "🗺️", reward: 60 },
   { id: "lvl15", name: "Aventurier", desc: "Finir 15 niveaux", icon: "🧭", reward: 200 },
   { id: "lvl30", name: "Conquérant", desc: "Finir les 30 niveaux", icon: "🌟", reward: 800 },
