@@ -5,7 +5,6 @@ import { useProfile, type Settings } from "../game/store";
 import { Btn, Coin, Panel, SkinPreview } from "./UI";
 import { cn } from "../utils/cn";
 import type { Mode } from "../game/engine";
-import logo from "../assets/flappy-arena-logo.png";
 
 interface Props {
   onPlay: (m: Mode) => void;
@@ -87,12 +86,12 @@ export default function MenuScreen({ onPlay, onShop, onSettings, onStats, onLeve
         </div>
 
         <div className="mt-2 text-center">
-          <img
-            src={logo}
-            alt="Flappy Arena"
-            className="mx-auto h-auto w-[min(88vw,390px)] drop-shadow-[0_12px_30px_rgba(14,165,233,.28)]"
-          />
-          <p className="-mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">
+          <h1 className="text-5xl font-black tracking-tighter text-transparent drop-shadow-[0_4px_0_rgba(0,0,0,.35)] sm:text-7xl"
+            style={{ backgroundImage: "linear-gradient(180deg,#fde047,#f59e0b 55%,#ea580c)", WebkitBackgroundClip: "text", backgroundClip: "text" }}>
+            FLAPPY
+          </h1>
+          <h2 className="-mt-2 text-3xl font-black tracking-[0.35em] text-sky-300 sm:text-4xl">ARENA</h2>
+          <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">
             {SKINS.length} skins · {TRAILS.length} traînées · {MAPS.length} maps · {LEVELS.length} niveaux
           </p>
         </div>
